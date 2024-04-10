@@ -1,0 +1,9 @@
+# Ignore everything
+*
+
+# But not these file types
+!*.rs
+!*.toml
+!*LICENSE
+!*README.md
+!.gitignore
