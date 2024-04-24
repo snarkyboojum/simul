@@ -4,14 +4,26 @@ use winit::{
     error::OsError, event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::{Window, WindowBuilder}
 };
 
+use ash::{vk, Entry, Instance};
+
 struct VkApp<'a> {
     name: &'a str,
+    _entry: ash::Entry,
+    //instance: ash::Instance,
+
 }
 
 impl VkApp<'_> {
     pub fn new(app_name: &str) -> VkApp {
+        unsafe {
+            let entry = Entry::load().unwrap();
+            //let instance = Entry::
 
-        return VkApp { name: app_name}; 
+            VkApp { 
+                name: app_name,
+                _entry: entry,
+            }
+        }
     }
 
     fn init_window(&self, event_loop: &EventLoop<()>) -> winit::window::Window {
