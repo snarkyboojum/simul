@@ -4,25 +4,36 @@ use winit::{
     error::OsError, event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::{Window, WindowBuilder}
 };
 
-use ash::{vk, Entry, Instance};
+use ash::{vk, Entry, Instance };
 
 struct VkApp<'a> {
     name: &'a str,
     _entry: ash::Entry,
-    //instance: ash::Instance,
+    instance: ash::Instance,
 
 }
 
 impl VkApp<'_> {
     pub fn new(app_name: &str) -> VkApp {
-        unsafe {
-            let entry = Entry::load().unwrap();
-            //let instance = Entry::
+        // TODO: get the linked version of ash working - will this allow us to remove the unsafe block?
+        let entry = unsafe { Entry::load().unwrap() };
 
-            VkApp { 
-                name: app_name,
-                _entry: entry,
-            }
+        let app_info = vk::ApplicationInfo {
+            api_version: vk::make_api_version(0, 1, 0, 0),
+            ..Default::default()
+        };
+        let create_info = vk::InstanceCreateInfo {
+            p_application_info: &app_info,
+            ..Default::default()
+        };
+
+        // TODO: can I get rid of this unsafe block as well?
+        let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
+
+        VkApp { 
+            name: app_name,
+            _entry: entry,
+            instance: instance,
         }
     }
 
