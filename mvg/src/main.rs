@@ -10,7 +10,6 @@ struct VkApp<'a> {
     name: &'a str,
     _entry: ash::Entry,
     instance: ash::Instance,
-
 }
 
 impl VkApp<'_> {
@@ -28,6 +27,7 @@ impl VkApp<'_> {
         };
 
         // TODO: can I get rid of this unsafe block as well?
+        // TODO: also need to do proper error handling here
         let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
 
         VkApp { 
@@ -60,17 +60,20 @@ impl VkApp<'_> {
             }
         });
     }
+}
 
-    fn cleanup(&self) {
-
+impl Drop for VkApp<'_> {
+    fn drop(&mut self) {
+        println!("Cleanup of Vulkan app");
+        unsafe { self.instance.destroy_instance(None); };
     }
-
 }
 
 fn main() -> Result<(), OsError> {
     println!("This package implements multi-view geometry.");
-
     let app = VkApp::new("Point cloud renderer");
+    
+    println!("App name: {}", app.name);
     let event_loop = EventLoop::new().unwrap();
 
     let window = app.init_window(&event_loop);
@@ -79,3 +82,6 @@ fn main() -> Result<(), OsError> {
     Ok(())
 
 }
+
+
+
