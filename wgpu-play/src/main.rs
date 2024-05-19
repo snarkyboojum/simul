@@ -1,15 +1,29 @@
-use winit::{
-    application::ApplicationHandler, event::WindowEvent, event_loop::{ControlFlow, EventLoop, ActiveEventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId}
-};
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::{Window, WindowId};
 
-#[derive(Default)]
-struct SimulApp {
-    window: Option<Window>,
+
+struct SimulApp<'app> {
+    window: Window,
+    surface: wgpu::Surface<'app>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    size: winit::dpi::PhysicalSize<u32>,
 }
 
-impl ApplicationHandler for SimulApp {
+impl<'app> SimulApp<'app> {
+    fn new() -> SimulApp<'app> {
+        todo!();
+        //Self { window: None, surface: None }  
+    }
+}
+
+impl<'app> ApplicationHandler for SimulApp<'app> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.window = Some(event_loop.create_window(Window::default_attributes()).unwrap());
+        self.window = event_loop.create_window(Window::default_attributes()).unwrap();
     }
 
     fn window_event( &mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
@@ -19,10 +33,10 @@ impl ApplicationHandler for SimulApp {
                 event_loop.exit(); 
             },
             WindowEvent::RedrawRequested => {
-                self.window.as_ref().unwrap().request_redraw();
+                self.window.request_redraw();
             },
             WindowEvent::Resized(new_size) => {
-                //println!("Resized! Width: {}, Height: {}", new_size.width, new_size.height);
+                println!("Resized! Width: {}, Height: {}", new_size.width, new_size.height);
 
             },
             _ => (),
@@ -35,47 +49,6 @@ fn main() {
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = SimulApp::default();
-    event_loop.run_app(&mut app);
+    let mut app = SimulApp::new();
+    event_loop.run_app(&mut app).expect("Error in the event loop");
 }
-
-
-/*use winit::{
-    event::*,
-    event_loop::EventLoop,
-    keyboard::{KeyCode, PhysicalKey},
-    window::WindowBuilder,
-};
-
-pub fn run() {
-    env_logger::init();
-    let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
-
-    let _ = event_loop.run(move |event, elwt| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == window.id() => match event {
-            WindowEvent::CloseRequested
-            | WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        state: ElementState::Pressed,
-                        physical_key: PhysicalKey::Code(KeyCode::Escape),
-                        ..
-                    },
-                ..
-            } => { elwt.exit(); }
-            _ => {}
-        },
-        _ => {}
-    });
-}
-
-fn main() {
-    println!("Welcome to wgpu!");
-
-    run();
-}
-*/
