@@ -1,8 +1,9 @@
 
 use winit::{
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    keyboard::{KeyCode, PhysicalKey},
+    window::WindowBuilder
 };
 
 pub fn run() {
@@ -11,15 +12,22 @@ pub fn run() {
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    event_loop.run(move |event, elwt| {
+    let _ = event_loop.run(move |event, elwt| {
         match event {
             Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
+                event: WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
+                    event: KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        ..
+                    },
+                    ..
+                },
                 ..
             } => {
-                println!("The close button has been pressed. Closing window.");
+                println!("The close button or escape key has been pressed. Closing window.");
                 elwt.exit();
-            }
+            },
             _ => ()
         }
     });
