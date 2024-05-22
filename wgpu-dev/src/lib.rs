@@ -3,8 +3,29 @@ use winit::{
     event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::WindowBuilder
+    window::{WindowBuilder, Window}
 };
+
+struct Simul<'app> {
+    surface: wgpu::Surface<'app>,
+}
+
+impl<'app> Simul<'app> {
+    async fn new(window: &'app Window) -> Simul<'app> {
+        let size = window.inner_size();
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
+
+        let surface = unsafe { instance.create_surface(window) }.unwrap();
+
+        Self {
+            surface: surface
+        }
+    }
+}
 
 pub fn run() {
     let event_loop = EventLoop::new().unwrap();
