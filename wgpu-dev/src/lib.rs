@@ -1,6 +1,7 @@
 
 use std::default;
 
+use wgpu::Surface;
 use winit::{
     event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -10,9 +11,13 @@ use winit::{
 
 struct Simul<'app> {
     surface: wgpu::Surface<'app>,
-    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    size: winit::dpi::PhysicalSize<u32>,
+
+    window: &'app Window,
+    // adapter: wgpu::Adapter,
 }
 
 impl<'app> Simul<'app> {
@@ -46,11 +51,34 @@ impl<'app> Simul<'app> {
         // println!("Adapter features: {:?}", adapter.features());
         println!("Adapter info: {:?}", adapter.get_info());
 
+        let surface_capability = surface.get_capabilities(&adapter);
+        let surface_format = surface_capability.formats.iter()
+            .find(|f| f.is_srgb())
+            .copied()
+            .unwrap_or(surface_capability.formats[0]);
+
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: size.width,
+            height: size.height,
+            present_mode: wgpu::PresentMode::AutoVsync,
+            desired_maximum_frame_latency: 2,
+            alpha_mode: surface_capability.alpha_modes[0],
+            view_formats: vec![]
+        };
+
+        println!("The alpha mode being used is: {:?}", config.alpha_mode);
+
+
+
         Self {
             surface: surface,
-            adapter: adapter,
             device: device,
             queue: queue,
+            config: config,
+            size: size,
+            window: window
         }
     }
 }
