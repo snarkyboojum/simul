@@ -134,6 +134,7 @@ impl<'app> Simul<'app> {
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
+
         Ok(())
     }
 
@@ -155,9 +156,6 @@ pub async fn run() {
     let mut app = Simul::new(&window).await;
 
     // respond to events
-    // event_loop.set_control_flow(ControlFlow::Poll);
-    event_loop.set_control_flow(ControlFlow::Wait);
-
     let _ = event_loop.run(move |event, elwt| {
         match event {
             Event::WindowEvent {
