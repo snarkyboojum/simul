@@ -70,8 +70,6 @@ impl<'app> Simul<'app> {
 
         println!("The alpha mode being used is: {:?}", config.alpha_mode);
 
-
-
         Self {
             surface: surface,
             device: device,
@@ -83,6 +81,7 @@ impl<'app> Simul<'app> {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
