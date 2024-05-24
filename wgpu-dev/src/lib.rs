@@ -2,11 +2,13 @@
 use std::default;
 
 use wgpu::Surface;
+
 use winit::{
-    event::{ElementState, Event, KeyEvent, WindowEvent},
+    event::{ElementState, Event, KeyEvent, WindowEvent, InnerSizeWriter},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{WindowBuilder, Window}
+    window::{WindowBuilder, Window},
+    dpi::PhysicalSize,
 };
 
 struct Simul<'app> {
@@ -79,6 +81,16 @@ impl<'app> Simul<'app> {
             window: window
         }
     }
+
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.size = new_size;
+        
+        self.config.width = new_size.width;
+        self.config.height = new_size.height;
+
+        // println!("New width and height: ({},{})", self.config.width, self.config.height);
+        self.surface.configure(&self.device, &self.config);
+    }
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
@@ -86,7 +98,7 @@ pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    let app = Simul::new(&window).await;
+    let mut app = Simul::new(&window).await;
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -105,6 +117,12 @@ pub async fn run() {
             } => {
                 println!("The close button or escape key has been pressed. Closing window.");
                 elwt.exit();
+            },
+            Event::WindowEvent {
+                event: WindowEvent::Resized(physical_size),
+                ..
+            } => {
+                app.resize(physical_size);
             },
             _ => ()
         }
