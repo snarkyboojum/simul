@@ -1,10 +1,6 @@
 
-use std::default;
-
-use wgpu::Surface;
-
 use winit::{
-    dpi::{LogicalSize, PhysicalSize}, event::{ElementState, Event, InnerSizeWriter, KeyEvent, WindowEvent}, event_loop::{ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
+    dpi::LogicalSize, event::{ElementState, Event, KeyEvent, WindowEvent}, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
 };
 
 struct Simul<'app> {
@@ -16,7 +12,7 @@ struct Simul<'app> {
 
     window: &'app Window,
 
-    // render_pipeline: wgpu::RenderPipeline,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
 impl<'app> Simul<'app> {
@@ -51,7 +47,7 @@ impl<'app> Simul<'app> {
 
         // println!("Adapter features: {:?}", adapter.features());
         println!("Adapter info: {:?}", adapter.get_info());
-        println!("Size: ({}, {})", size.width, size.height);
+        // println!("Size: ({}, {})", size.width, size.height);
 
         let surface_capability = surface.get_capabilities(&adapter);
         let surface_format = surface_capability.formats.iter()
@@ -71,12 +67,57 @@ impl<'app> Simul<'app> {
             view_formats: vec![]
         };
 
-        println!("The alpha mode being used is: {:?}", config.alpha_mode);
+        // println!("The alpha mode being used is: {:?}", config.alpha_mode);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Our first shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
+
+        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label:  Some("Render pipeline layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+                compilation_options: Default::default(),
+
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            depth_stencil: None,
+            multiview: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::default(), // Ccw is the default
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+                unclipped_depth: false,
+            },
+        });
+
 
         Self {
             surface: surface,
@@ -84,7 +125,8 @@ impl<'app> Simul<'app> {
             queue: queue,
             config: config,
             size: size,
-            window: window
+            window: window,
+            render_pipeline: render_pipeline,
         }
     }
 
@@ -94,7 +136,7 @@ impl<'app> Simul<'app> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
 
-            println!("New width and height: ({},{})", self.config.width, self.config.height);
+            // println!("New width and height: ({},{})", self.config.width, self.config.height);
             self.surface.configure(&self.device, &self.config);
         }
     }
@@ -116,7 +158,7 @@ impl<'app> Simul<'app> {
             label: Some("Render Encoder"),
         });
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -135,12 +177,14 @@ impl<'app> Simul<'app> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.draw(0..3, 0..1);
         }
 
         // submit will accept anything that implements IntoIter
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-
 
         Ok(())
     }
@@ -176,7 +220,6 @@ pub async fn run() {
                 },
                 ..
             } => {
-                println!("The close button or escape key has been pressed. Closing window.");
                 elwt.exit();
             },
             Event::WindowEvent {
