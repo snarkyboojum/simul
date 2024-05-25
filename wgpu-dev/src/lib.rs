@@ -15,7 +15,8 @@ struct Simul<'app> {
     size: winit::dpi::PhysicalSize<u32>,
 
     window: &'app Window,
-    // adapter: wgpu::Adapter,
+
+    // render_pipeline: wgpu::RenderPipeline,
 }
 
 impl<'app> Simul<'app> {
@@ -27,7 +28,8 @@ impl<'app> Simul<'app> {
             ..Default::default()
         });
 
-        let surface = unsafe { instance.create_surface(window) }.unwrap();
+        // TODO: should this be unsafe?
+        let surface = instance.create_surface(window).unwrap();
 
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
@@ -71,6 +73,11 @@ impl<'app> Simul<'app> {
 
         println!("The alpha mode being used is: {:?}", config.alpha_mode);
 
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Our first shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+
         Self {
             surface: surface,
             device: device,
@@ -103,7 +110,7 @@ impl<'app> Simul<'app> {
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
 
-        // copy pasta
+        // copy pasta from the tutorial - https://sotrh.github.io/learn-wgpu/beginner/tutorial2-surface/#render
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
