@@ -213,35 +213,35 @@ pub async fn run() {
     let _ = event_loop.run(move |event, elwt| {
         match event {
             Event::WindowEvent {
-                event: WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
-                    event: KeyEvent {
-                        state: ElementState::Pressed,
-                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                ref event,
+                window_id,
+            }
+            // capture events in app.input() if we've matched a Event::WindowEvent
+            if !app.input(event) => {
+                match event {
+                    WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
+                        event: KeyEvent {
+                            state: ElementState::Pressed,
+                            physical_key: PhysicalKey::Code(KeyCode::Escape),
+                            ..
+                        },
                         ..
+                    } => elwt.exit(),
+                    WindowEvent::Resized(physical_size) => {
+                        app.resize(*physical_size);
                     },
-                    ..
-                },
-                ..
-            } => {
-                elwt.exit();
-            },
-            Event::WindowEvent {
-                event: WindowEvent::Resized(physical_size),
-                ..
-            } => {
-                app.resize(physical_size);
-            },
-            Event::WindowEvent {
-                event: WindowEvent::RedrawRequested,
-                ..
-            } => {
-                app.update();
-                match app.render() {
-                    Ok(_) => {},
-                    Err(e) => eprintln!("{:?}", e),
+                    WindowEvent::RedrawRequested => {
+                        app.update();
+
+                        match app.render() {
+                            Ok(_) => {},
+                            Err(e) => eprintln!("{:?}", e),
+                        }
+                    },
+                    _ => ()
                 }
-            },
-            _ => ()
+            }
+        _ => (),
         }
     });
 }
