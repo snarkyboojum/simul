@@ -1,6 +1,6 @@
 
 use winit::{
-    dpi::LogicalSize, event::{ElementState, Event, KeyEvent, WindowEvent}, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
+    dpi::LogicalSize, event::{self, ElementState, Event, KeyEvent, WindowEvent}, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
 };
 
 struct Simul<'app> {
@@ -10,9 +10,11 @@ struct Simul<'app> {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
 
+    challenge: bool,
     window: &'app Window,
 
     render_pipeline: wgpu::RenderPipeline,
+    challenge_render_pipeline: wgpu::RenderPipeline,
 }
 
 impl<'app> Simul<'app> {
@@ -70,8 +72,13 @@ impl<'app> Simul<'app> {
         // println!("The alpha mode being used is: {:?}", config.alpha_mode);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Our first shader"),
+            label: Some("Standard shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+
+        let challenge_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Challenge shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("challenge_shader.wgsl").into()),
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -118,6 +125,44 @@ impl<'app> Simul<'app> {
             },
         });
 
+        let challenge_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Challenge render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &challenge_shader,
+                entry_point: "vs_main",
+                buffers: &[],
+                compilation_options: Default::default(),
+
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &challenge_shader,
+                entry_point: "fs_main",
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            depth_stencil: None,
+            multiview: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::default(), // Ccw is the default
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+                unclipped_depth: false,
+            },
+        });
+
 
         Self {
             surface: surface,
@@ -125,8 +170,10 @@ impl<'app> Simul<'app> {
             queue: queue,
             config: config,
             size: size,
+            challenge: false,
             window: window,
             render_pipeline: render_pipeline,
+            challenge_render_pipeline: challenge_render_pipeline,
         }
     }
 
@@ -142,7 +189,26 @@ impl<'app> Simul<'app> {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+
+        match event {
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    physical_key: PhysicalKey::Code(KeyCode::Space),
+                    state: ElementState::Pressed,
+                    ..
+                },
+                ..
+             } => {
+                if self.challenge {
+                    self.challenge = false;
+                }
+                else {
+                    self.challenge = true;
+                }
+                return true
+            },
+            _ => { return false }
+        }
     }
 
     fn update(&mut self) {
@@ -182,7 +248,13 @@ impl<'app> Simul<'app> {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
+
+            if self.challenge {
+                render_pass.set_pipeline(&self.challenge_render_pipeline);
+            }
+            else {
+                render_pass.set_pipeline(&self.render_pipeline);
+            }
             render_pass.draw(vertices, 0..1);
         }
 
@@ -231,6 +303,7 @@ pub async fn run() {
                         app.resize(*physical_size);
                     },
                     WindowEvent::RedrawRequested => {
+                        app.window.request_redraw();
                         app.update();
 
                         match app.render() {
