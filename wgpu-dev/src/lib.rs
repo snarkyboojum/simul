@@ -3,6 +3,25 @@ use winit::{
     dpi::LogicalSize, event::{self, ElementState, Event, KeyEvent, WindowEvent}, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
 };
 
+use wgpu::util::DeviceExt;
+use bytemuck::{Pod, Zeroable};
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+];
+
+
 struct Simul<'app> {
     surface: wgpu::Surface<'app>,
     device: wgpu::Device,
@@ -15,6 +34,8 @@ struct Simul<'app> {
 
     render_pipeline: wgpu::RenderPipeline,
     challenge_render_pipeline: wgpu::RenderPipeline,
+
+    vertex_buffer: wgpu::Buffer,
 }
 
 impl<'app> Simul<'app> {
@@ -71,6 +92,12 @@ impl<'app> Simul<'app> {
 
         // println!("The alpha mode being used is: {:?}", config.alpha_mode);
 
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Standard shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -171,9 +198,13 @@ impl<'app> Simul<'app> {
             config: config,
             size: size,
             challenge: false,
+
             window: window,
+
             render_pipeline: render_pipeline,
             challenge_render_pipeline: challenge_render_pipeline,
+            
+            vertex_buffer: vertex_buffer,
         }
     }
 
