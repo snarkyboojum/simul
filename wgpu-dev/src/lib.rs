@@ -1,4 +1,6 @@
 
+use core::num;
+
 use winit::{
     dpi::LogicalSize, event::{self, ElementState, Event, KeyEvent, WindowEvent}, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
 };
@@ -15,11 +17,33 @@ struct Vertex {
 
 }
 
+// we use the convention that vertices are counter-clockwise (CCW) - see below in the render pipeline configuration
 const VERTICES: &[Vertex] = &[
     Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
     Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
     Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
 ];
+
+impl Vertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32;3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                }
+            ]
+        }
+    }
+}
 
 
 struct Simul<'app> {
@@ -35,12 +59,14 @@ struct Simul<'app> {
     render_pipeline: wgpu::RenderPipeline,
     challenge_render_pipeline: wgpu::RenderPipeline,
 
+    num_vertices: u32,
     vertex_buffer: wgpu::Buffer,
 }
 
 impl<'app> Simul<'app> {
     async fn new(window: &'app Window) -> Simul<'app> {
         let size = window.inner_size();
+        let num_vertices = VERTICES.len();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -120,7 +146,7 @@ impl<'app> Simul<'app> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::desc()],
                 compilation_options: Default::default(),
 
             },
@@ -144,7 +170,7 @@ impl<'app> Simul<'app> {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::default(), // Ccw is the default
+                front_face: wgpu::FrontFace::Ccw, // Ccw is also the default with RH coordinates
                 cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,
@@ -158,7 +184,7 @@ impl<'app> Simul<'app> {
             vertex: wgpu::VertexState {
                 module: &challenge_shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::desc()],
                 compilation_options: Default::default(),
 
             },
@@ -182,7 +208,7 @@ impl<'app> Simul<'app> {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::default(), // Ccw is the default
+                front_face: wgpu::FrontFace::Ccw, // Ccw is the default
                 cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,
@@ -204,6 +230,7 @@ impl<'app> Simul<'app> {
             render_pipeline: render_pipeline,
             challenge_render_pipeline: challenge_render_pipeline,
             
+            num_vertices: num_vertices as u32,
             vertex_buffer: vertex_buffer,
         }
     }
@@ -262,8 +289,6 @@ impl<'app> Simul<'app> {
                 a: 1.0,
             };
 
-            let vertices = 0..3u32;
-
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -286,7 +311,8 @@ impl<'app> Simul<'app> {
             else {
                 render_pass.set_pipeline(&self.render_pipeline);
             }
-            render_pass.draw(vertices, 0..1);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
