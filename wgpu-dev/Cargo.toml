@@ -10,6 +10,7 @@ winit = { version = "0.29", features = ["rwh_05"] }
 wgpu = "0.20.0"
 pollster = "0.3.0"
 bytemuck = { version = "1.16.0", features = [ "derive" ] }
+image = { version = "0.25.1", feature =  [ "png", "jpeg"] }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
