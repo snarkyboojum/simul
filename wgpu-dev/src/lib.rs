@@ -9,14 +9,6 @@ use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
-
-}
-
 // we use the convention that vertices are counter-clockwise (CCW) - see below in the render pipeline configuration
 const VERTICES: &[Vertex] = &[
 Vertex { position: [-0.0868241, 0.49240386, 0.0], tex_coords: [0.4131759, 0.00759614], }, // A
@@ -32,6 +24,14 @@ const INDICES: &[u16] = &[
     2, 3, 4,
 ];
 
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    tex_coords: [f32; 2],
+
+}
 
 impl Vertex {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -51,6 +51,55 @@ impl Vertex {
                 }
             ]
         }
+    }
+}
+
+
+#[rustfmt::skip]
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.5,
+    0.0, 0.0, 0.0, 1.0,
+);
+
+
+struct Camera {
+    eye: cgmath::Point3<f32>,
+    target: cgmath::Point3<f32>,
+    up: cgmath::Vector3<f32>,
+    aspect: f32,
+    fovy: f32,
+    znear: f32,
+    zfar: f32,
+}
+
+impl Camera {
+    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
+        
+        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
+        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+
+        return OPENGL_TO_WGPU_MATRIX * proj * view;
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct CameraUniform {
+    view_proj: [[f32; 4]; 4],
+}
+
+impl CameraUniform {
+    fn new() -> Self {
+        use cgmath::SquareMatrix;
+        Self {
+            view_proj: cgmath::Matrix4::identity().into(),
+        }
+    }
+
+    fn update_view_proj(&mut self, camera: &Camera) {
+        self.view_proj = camera.build_view_projection_matrix().into();
     }
 }
 
@@ -77,6 +126,11 @@ struct Simul<'app> {
     // we should store a list of textures here or a hashmap
     tree_texture: texture::Texture,
     glenda_texture: texture::Texture,
+
+    camera: Camera,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
 }
 
 impl<'app> Simul<'app> {
@@ -142,7 +196,7 @@ impl<'app> Simul<'app> {
         let glenda_texture = Texture::from_bytes(&device, &queue, glenda_bytes, "spaceglenda37.jpg").unwrap();
 
 
-        // setup the bind group for shaders to access textures
+        // setup the bind group layout for textures
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -195,6 +249,51 @@ impl<'app> Simul<'app> {
             label: Some("diffuse_bind_group"),
         });
 
+
+        // magic camera configuration with maths I don't really understand yet :)
+        let camera = Camera {
+            eye: (0.0, 1.0, 2.0).into(),
+            target: (0.0, 0.0, 0.0).into(),
+            up: cgmath::Vector3::unit_y(),
+            aspect: config.width as f32 / config.height as f32,
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+
+        let camera_buffer = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
+            label: Some("Camera buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                }
+            ],
+            label: Some("camera_bind_group_layout"),
+        });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera_bind_group"),
+            layout: &camera_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                }
+            ],
+        });
+
+
         // setup vertex and index buffers
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex buffer"),
@@ -217,7 +316,10 @@ impl<'app> Simul<'app> {
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label:  Some("Render pipeline layout"),
-            bind_group_layouts: &[&texture_bind_group_layout],
+            bind_group_layouts: &[
+                &texture_bind_group_layout,
+                &camera_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -279,6 +381,11 @@ impl<'app> Simul<'app> {
             glenda_texture,
             tree_bind_group,
             glenda_bind_group,
+
+            camera,
+            camera_bind_group,
+            camera_buffer,
+            camera_uniform,
         }
     }
 
@@ -352,14 +459,12 @@ impl<'app> Simul<'app> {
 
             if self.flip {
                 render_pass.set_bind_group(0, &self.tree_bind_group, &[]);
-                // println!("Bind group offset: 0");
             }
             else {
                 render_pass.set_bind_group(0, &self.glenda_bind_group, &[]);
-                // println!("Bind group offset: 2");
             }
 
-            // render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
@@ -373,6 +478,7 @@ impl<'app> Simul<'app> {
     }
 
 }
+
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
