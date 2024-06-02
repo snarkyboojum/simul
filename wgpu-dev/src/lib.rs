@@ -62,18 +62,21 @@ struct Simul<'app> {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
 
-    challenge: bool,
+    flip: bool,     // flag to know if to switch render pipelines
     window: &'app Window,
 
     render_pipeline: wgpu::RenderPipeline,
-    challenge_render_pipeline: wgpu::RenderPipeline,
 
     num_indices: u32,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
 
-    diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: texture::Texture,
+    tree_bind_group: wgpu::BindGroup,
+    glenda_bind_group: wgpu::BindGroup,
+    
+    // we should store a list of textures here or a hashmap
+    tree_texture: texture::Texture,
+    glenda_texture: texture::Texture,
 }
 
 impl<'app> Simul<'app> {
@@ -131,8 +134,13 @@ impl<'app> Simul<'app> {
 
 
         // load a texture from an image file
-        let diffuse_bytes = include_bytes!("happy-tree.png");
-        let diffuse_texture = Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
+        let tree_bytes = include_bytes!("happy-tree.png");
+        let tree_texture = Texture::from_bytes(&device, &queue, tree_bytes, "happy-tree.png").unwrap();
+
+        // load another texture
+        let glenda_bytes = include_bytes!("spaceglenda37.jpg");
+        let glenda_texture = Texture::from_bytes(&device, &queue, glenda_bytes, "spaceglenda37.jpg").unwrap();
+
 
         // setup the bind group for shaders to access textures
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -157,21 +165,35 @@ impl<'app> Simul<'app> {
             label: Some("texture_bind_group_layout"),
         });
 
-        let diffuse_bind_group= device.create_bind_group( &wgpu::BindGroupDescriptor {
+        let tree_bind_group= device.create_bind_group( &wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&tree_texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&tree_texture.sampler),
                 },
             ],
             label: Some("diffuse_bind_group"),
         });
         
+        let glenda_bind_group= device.create_bind_group( &wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&glenda_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&glenda_texture.sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
 
         // setup vertex and index buffers
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -191,11 +213,6 @@ impl<'app> Simul<'app> {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Standard shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
-
-        let challenge_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Challenge shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("challenge_shader.wgsl").into()),
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -242,64 +259,26 @@ impl<'app> Simul<'app> {
             },
         });
 
-        let challenge_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Challenge render pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &challenge_shader,
-                entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
-                compilation_options: Default::default(),
-
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &challenge_shader,
-                entry_point: "fs_main",
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            depth_stencil: None,
-            multiview: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw, // Ccw is the default
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-                unclipped_depth: false,
-            },
-        });
-
-
         Self {
             surface: surface,
             device: device,
             queue: queue,
             config: config,
             size: size,
-            challenge: false,
+            flip: false,
 
             window: window,
 
             render_pipeline: render_pipeline,
-            challenge_render_pipeline: challenge_render_pipeline,
             
             num_indices: num_indices as u32,
             vertex_buffer: vertex_buffer,
             index_buffer: index_buffer,
 
-            diffuse_texture,
-            diffuse_bind_group: diffuse_bind_group,
+            tree_texture,
+            glenda_texture,
+            tree_bind_group,
+            glenda_bind_group,
         }
     }
 
@@ -325,12 +304,8 @@ impl<'app> Simul<'app> {
                 },
                 ..
              } => {
-                if self.challenge {
-                    self.challenge = false;
-                }
-                else {
-                    self.challenge = true;
-                }
+                self.flip = if self.flip { false } else { true };
+
                 return true
             },
             _ => { return false }
@@ -373,14 +348,18 @@ impl<'app> Simul<'app> {
             });
 
 
-            if self.challenge {
-                render_pass.set_pipeline(&self.challenge_render_pipeline);
+            render_pass.set_pipeline(&self.render_pipeline);
+
+            if self.flip {
+                render_pass.set_bind_group(0, &self.tree_bind_group, &[]);
+                // println!("Bind group offset: 0");
             }
             else {
-                render_pass.set_pipeline(&self.render_pipeline);
+                render_pass.set_bind_group(0, &self.glenda_bind_group, &[]);
+                // println!("Bind group offset: 2");
             }
 
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            // render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
