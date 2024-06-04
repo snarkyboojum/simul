@@ -9,6 +9,7 @@ use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 
 
+
 // we use the convention that vertices are counter-clockwise (CCW) - see below in the render pipeline configuration
 const VERTICES: &[Vertex] = &[
 Vertex { position: [-0.0868241, 0.49240386, 0.0], tex_coords: [0.4131759, 0.00759614], }, // A
@@ -23,6 +24,9 @@ const INDICES: &[u16] = &[
     1, 2, 4,
     2, 3, 4,
 ];
+
+const NUM_INSTANCES_PER_ROW: u32 = 10;
+const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
 
 
 #[repr(C)]
@@ -50,6 +54,27 @@ impl Vertex {
                     format: wgpu::VertexFormat::Float32x2,
                 }
             ]
+        }
+    }
+}
+
+
+struct Instance {
+    position: cgmath::Vector3<f32>,
+    rotation: cgmath::Quaternion<f32>,
+}
+
+// this feels hacky and lazy
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct InstanceRaw {
+    model: [[f32; 4]; 4],
+}
+
+impl Instance {
+    fn to_raw(&self) -> InstanceRaw {
+        InstanceRaw {
+            model: (cgmath::Matrix4::from_translation(self.position) * cgmath::Matrix4::from(self.rotation)).into(),
         }
     }
 }
@@ -232,6 +257,10 @@ struct Simul<'app> {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
+
+    // TODO: Add instances
+    // instances: Vec<Instance>,
+    // instance_buffer: wgpu::Buffer,
 }
 
 impl<'app> Simul<'app> {
@@ -490,6 +519,8 @@ impl<'app> Simul<'app> {
             camera_buffer,
             camera_uniform,
             camera_controller,
+
+
         }
     }
 
@@ -577,7 +608,7 @@ impl<'app> Simul<'app> {
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..5);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
