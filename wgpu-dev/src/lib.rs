@@ -109,6 +109,27 @@ impl Camera {
     }
 }
 
+struct CameraStaging {
+    camera: Camera,
+    model_rotation: cgmath::Deg<f32>,
+}
+
+impl CameraStaging {
+    fn new(camera: Camera) -> Self {
+        Self {
+            camera,
+            model_rotation: cgmath::Deg(0.0),
+        }
+    }
+    
+    fn update_camera(&self, camera_uniform: &mut CameraUniform) {
+        camera_uniform.view_proj = (OPENGL_TO_WGPU_MATRIX
+            * self.camera.build_view_projection_matrix()
+            * cgmath::Matrix4::from_angle_z(self.model_rotation))
+        .into();
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct CameraUniform {
@@ -252,11 +273,12 @@ struct Simul<'app> {
     tree_texture: texture::Texture,
     glenda_texture: texture::Texture,
 
-    camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
+
+    camera_staging: CameraStaging,
 
     // TODO: Add instances
     // instances: Vec<Instance>,
@@ -394,7 +416,10 @@ impl<'app> Simul<'app> {
         let camera_controller = CameraController::new(0.01);
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
+        let camera_staging = CameraStaging::new(camera);
+        camera_staging.update_camera(&mut camera_uniform);
+
+        // camera_uniform.update_view_proj(&camera);
 
         let camera_buffer = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
             label: Some("Camera buffer"),
@@ -514,11 +539,12 @@ impl<'app> Simul<'app> {
             tree_bind_group,
             glenda_bind_group,
 
-            camera,
             camera_bind_group,
             camera_buffer,
             camera_uniform,
             camera_controller,
+
+            camera_staging,
 
 
         }
@@ -536,7 +562,6 @@ impl<'app> Simul<'app> {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-
         // respond to any camera controls
         self.camera_controller.process_events(event);
 
@@ -558,8 +583,16 @@ impl<'app> Simul<'app> {
     }
 
     fn update(&mut self) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
+        // rotate instance(s)
+        // while let instance = self.instances.iter().next() {
+        //     instance.unwrap().rotation. 
+
+        // }
+
+        self.camera_controller.update_camera(&mut self.camera_staging.camera);
+        self.camera_staging.model_rotation += cgmath::Deg(0.2);
+        self.camera_staging.update_camera(&mut self.camera_uniform);
+
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
     }
 
