@@ -1,10 +1,12 @@
 mod texture;
 
+use cgmath::{InnerSpace, Rotation3};
 use texture::Texture;
 use winit::{
     dpi::LogicalSize, event::{self, ElementState, Event, KeyEvent, WindowEvent}, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
 };
 
+use cgmath::prelude::*;
 use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 
@@ -71,6 +73,45 @@ struct InstanceRaw {
     model: [[f32; 4]; 4],
 }
 
+impl InstanceRaw {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
+            // We need to switch from using a step mode of Vertex to Instance
+            // This means that our shaders will only change to use the next
+            // instance when the shader starts processing a new instance
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
+                // for each vec4. We'll have to reassemble the mat4 in the shader.
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials, we'll
+                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5, not conflict with them later
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+}
+
 impl Instance {
     fn to_raw(&self) -> InstanceRaw {
         InstanceRaw {
@@ -125,8 +166,10 @@ impl CameraStaging {
     fn update_camera(&self, camera_uniform: &mut CameraUniform) {
         camera_uniform.view_proj = (OPENGL_TO_WGPU_MATRIX
             * self.camera.build_view_projection_matrix()
-            * cgmath::Matrix4::from_angle_z(self.model_rotation))
-        .into();
+            // * cgmath::Matrix4::from_angle_x(self.model_rotation)
+            // * cgmath::Matrix4::from_angle_y(self.model_rotation)
+            // * cgmath::Matrix4::from_angle_z(self.model_rotation)
+        ).into();
     }
 }
 
@@ -280,9 +323,8 @@ struct Simul<'app> {
 
     camera_staging: CameraStaging,
 
-    // TODO: Add instances
-    // instances: Vec<Instance>,
-    // instance_buffer: wgpu::Buffer,
+    instances: Vec<Instance>,
+    instance_buffer: wgpu::Buffer,
 }
 
 impl<'app> Simul<'app> {
@@ -451,7 +493,39 @@ impl<'app> Simul<'app> {
         });
 
 
+        // create all the instances
+        let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
+            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                let position = cgmath::Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+
+                let rotation = if position.is_zero() {
+                    cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+                }
+                else {
+                    cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
+                };
+
+                Instance {
+                    position,
+                    rotation
+                }
+            })
+        }).collect::<Vec<_>>();
+
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        // println!("Number of instances is: {}", instance_data.len());
+
+        let instance_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
         // setup vertex and index buffers
+        // println!("Number of vertices is: {}", VERTICES.len());
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex buffer"),
             contents: bytemuck::cast_slice(VERTICES),
@@ -486,7 +560,7 @@ impl<'app> Simul<'app> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
+                buffers: &[Vertex::desc(), InstanceRaw::desc()],
                 compilation_options: Default::default(),
 
             },
@@ -519,20 +593,20 @@ impl<'app> Simul<'app> {
         });
 
         Self {
-            surface: surface,
-            device: device,
-            queue: queue,
-            config: config,
-            size: size,
+            surface,
+            device,
+            queue,
+            config,
+            size,
             flip: false,
 
-            window: window,
+            window,
 
-            render_pipeline: render_pipeline,
+            render_pipeline,
             
             num_indices: num_indices as u32,
-            vertex_buffer: vertex_buffer,
-            index_buffer: index_buffer,
+            vertex_buffer,
+            index_buffer,
 
             tree_texture,
             glenda_texture,
@@ -545,8 +619,8 @@ impl<'app> Simul<'app> {
             camera_controller,
 
             camera_staging,
-
-
+            instances,
+            instance_buffer,
         }
     }
 
@@ -583,12 +657,6 @@ impl<'app> Simul<'app> {
     }
 
     fn update(&mut self) {
-        // rotate instance(s)
-        // while let instance = self.instances.iter().next() {
-        //     instance.unwrap().rotation. 
-
-        // }
-
         self.camera_controller.update_camera(&mut self.camera_staging.camera);
         self.camera_staging.model_rotation += cgmath::Deg(0.2);
         self.camera_staging.update_camera(&mut self.camera_uniform);
@@ -639,9 +707,10 @@ impl<'app> Simul<'app> {
 
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..5);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
