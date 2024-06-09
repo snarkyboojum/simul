@@ -325,6 +325,8 @@ struct Simul<'app> {
 
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
+
+    depth_texture: texture::Texture,
 }
 
 impl<'app> Simul<'app> {
@@ -523,6 +525,9 @@ impl<'app> Simul<'app> {
             }
         );
 
+        // create our depth texture
+        let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+
         // setup vertex and index buffers
         // println!("Number of vertices is: {}", VERTICES.len());
 
@@ -574,7 +579,13 @@ impl<'app> Simul<'app> {
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multiview: None,
             multisample: wgpu::MultisampleState {
                 count: 1,
@@ -621,6 +632,8 @@ impl<'app> Simul<'app> {
             camera_staging,
             instances,
             instance_buffer,
+
+            depth_texture,
         }
     }
 
@@ -630,7 +643,7 @@ impl<'app> Simul<'app> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
 
-            // println!("New width and height: ({},{})", self.config.width, self.config.height);
+            self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
             self.surface.configure(&self.device, &self.config);
         }
     }
@@ -690,7 +703,14 @@ impl<'app> Simul<'app> {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
