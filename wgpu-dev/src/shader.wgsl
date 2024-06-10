@@ -50,7 +50,6 @@ fn vs_main(
 var t_diffuse: texture_2d<f32>;
 @group(0)@binding(1)
 var s_diffuse: sampler;
-// var s_diffuse: sampler_comparison;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -59,7 +58,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // sample the ddepth texture then un-normalise (i.e. 0->255) with alpha of 1
     let value = textureSample(t_diffuse, s_diffuse, in.tex_coords);
-    let output = vec4<f32>(value[0] * 255.0, value[1] * 255.0, value[2] * 255.0, 1);
+    let output = vec4<f32>(value[0] * 255.0, value[0] * 255.0, value[0] * 255.0, 1);
 
-    return value;
+    return output;
 }
