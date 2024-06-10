@@ -415,6 +415,29 @@ impl<'app> Simul<'app> {
             label: Some("texture_bind_group_layout"),
         });
 
+        // TODO: is TextureSampleType: depth correct here, if we want to render the depth texture?
+        let depth_texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Depth,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
+            label: Some("depth_texture_bind_group_layout"),
+        });
+
         let tree_bind_group= device.create_bind_group( &wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
             entries: &[
@@ -528,6 +551,21 @@ impl<'app> Simul<'app> {
         // create our depth texture
         let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
+        let depth_bind_group = device.create_bind_group( &wgpu::BindGroupDescriptor {
+            layout: &depth_texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&depth_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&depth_texture.sampler),
+                },
+            ],
+            label: Some("Depth bind group"),
+        });
+
         // setup vertex and index buffers
         // println!("Number of vertices is: {}", VERTICES.len());
 
@@ -555,6 +593,7 @@ impl<'app> Simul<'app> {
             bind_group_layouts: &[
                 &texture_bind_group_layout,
                 &camera_bind_group_layout,
+                // &depth_texture_bind_group_layout,
             ],
             push_constant_ranges: &[],
         });
