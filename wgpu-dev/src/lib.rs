@@ -14,7 +14,7 @@ use bytemuck::{Pod, Zeroable};
 
 // we use the convention that vertices are counter-clockwise (CCW) - see below in the render pipeline configuration
 const VERTICES: &[Vertex] = &[
-Vertex { position: [-0.0868241, 0.49240386, 0.0], tex_coords: [0.4131759, 0.00759614], }, // A
+    Vertex { position: [-0.0868241, 0.49240386, 0.0], tex_coords: [0.4131759, 0.00759614], }, // A
     Vertex { position: [-0.49513406, 0.06958647, 0.0], tex_coords: [0.0048659444, 0.43041354], }, // B
     Vertex { position: [-0.21918549, -0.44939706, 0.0], tex_coords: [0.28081453, 0.949397], }, // C
     Vertex { position: [0.35966998, -0.3473291, 0.0], tex_coords: [0.85967, 0.84732914], }, // D
@@ -424,14 +424,14 @@ impl<'app> Simul<'app> {
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        sample_type: wgpu::TextureSampleType::Depth,
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -551,20 +551,20 @@ impl<'app> Simul<'app> {
         // create our depth texture
         let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
-        let depth_bind_group = device.create_bind_group( &wgpu::BindGroupDescriptor {
-            layout: &depth_texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&depth_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&depth_texture.sampler),
-                },
-            ],
-            label: Some("Depth bind group"),
-        });
+        // let depth_bind_group = device.create_bind_group( &wgpu::BindGroupDescriptor {
+        //     layout: &depth_texture_bind_group_layout,
+        //     entries: &[
+        //         wgpu::BindGroupEntry {
+        //             binding: 0,
+        //             resource: wgpu::BindingResource::TextureView(&depth_texture.view),
+        //         },
+        //         wgpu::BindGroupEntry {
+        //             binding: 1,
+        //             resource: wgpu::BindingResource::Sampler(&depth_texture.sampler),
+        //         },
+        //     ],
+        //     label: Some("Depth bind group"),
+        // });
 
         // setup vertex and index buffers
         // println!("Number of vertices is: {}", VERTICES.len());

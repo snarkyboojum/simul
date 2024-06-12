@@ -60,5 +60,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let value = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     let output = vec4<f32>(value[0] * 255.0, value[0] * 255.0, value[0] * 255.0, 1);
 
-    return output;
+    return value;
 }
