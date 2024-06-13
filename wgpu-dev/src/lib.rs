@@ -303,7 +303,7 @@ struct Simul<'app> {
     flip: bool,     // flag to know if to switch render pipelines
     window: &'app Window,
 
-    render_pipeline: wgpu::RenderPipeline,
+    // render_pipeline: wgpu::RenderPipeline,
 
     num_indices: u32,
     vertex_buffer: wgpu::Buffer,
@@ -327,6 +327,8 @@ struct Simul<'app> {
     instance_buffer: wgpu::Buffer,
 
     depth_texture: texture::Texture,
+
+    pipelines: Vec<wgpu::RenderPipeline>,
 }
 
 impl<'app> Simul<'app> {
@@ -652,7 +654,7 @@ impl<'app> Simul<'app> {
 
             window,
 
-            render_pipeline,
+            // render_pipeline,
             
             num_indices: num_indices as u32,
             vertex_buffer,
@@ -673,6 +675,7 @@ impl<'app> Simul<'app> {
             instance_buffer,
 
             depth_texture,
+            pipelines: vec![render_pipeline],
         }
     }
 
@@ -755,7 +758,7 @@ impl<'app> Simul<'app> {
             });
 
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&self.pipelines[0]);
 
             if self.flip {
                 render_pass.set_bind_group(0, &self.tree_bind_group, &[]);
