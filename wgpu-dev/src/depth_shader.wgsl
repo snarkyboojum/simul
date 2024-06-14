@@ -38,7 +38,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // TODO: I don't know what offset does or why it's required for a texture_depth_2d type
     //       See, https://www.w3.org/TR/WGSL/#texturesample
     let value = textureSample(t_depth, s_depth, in.tex_coords, vec2<i32>(0,0));
-    let pixel = vec4<f32>(value, value, value, 1);
+    let frag = vec4<f32>(value, value, value, 1);
 
-    return pixel;
+    return frag;
 }

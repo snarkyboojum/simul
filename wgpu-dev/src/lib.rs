@@ -310,6 +310,7 @@ struct DepthScene {
     bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    depth_texture: Texture,
     num_indices: u32,
 }
 
@@ -434,6 +435,7 @@ impl DepthScene {
         Self {
             pipeline,
             bind_group,
+            depth_texture,
             vertex_buffer,
             index_buffer,
             num_indices: num_indices as u32,
@@ -798,7 +800,10 @@ impl<'app> Simul<'app> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
 
+            // println!("Updating depth textures on resize");
+
             self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture", true);
+            self.depth_scene.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth texture for rendering", false);
             self.surface.configure(&self.device, &self.config);
         }
     }
@@ -880,6 +885,7 @@ impl<'app> Simul<'app> {
                 render_pass.set_bind_group(0, &self.glenda_bind_group, &[]);
             }
 
+            // println!("Rendering normal scene");
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
@@ -888,6 +894,7 @@ impl<'app> Simul<'app> {
             render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
 
             // TODO: try and draw the depth buffer/texture
+            // println!("Rendering depth buffer scene");
             render_pass.set_pipeline(&self.depth_scene.pipeline);
             render_pass.set_bind_group(0, &self.depth_scene.bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.depth_scene.vertex_buffer.slice(..));
