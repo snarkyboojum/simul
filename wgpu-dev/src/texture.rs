@@ -12,6 +12,9 @@ impl Texture {
 
     pub fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, label: &str, comparison: bool) -> Self {
 
+        assert_ne!(config.width, 0);
+        assert_ne!(config.width, 0);
+
         let size = wgpu::Extent3d {
             width: config.width,
             height: config.height,
@@ -26,7 +29,7 @@ impl Texture {
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            view_formats: &[Self::DEPTH_FORMAT],
         };
 
         let texture = device.create_texture(&desc);
@@ -51,8 +54,8 @@ impl Texture {
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
                 address_mode_v: wgpu::AddressMode::ClampToEdge,
                 address_mode_w: wgpu::AddressMode::ClampToEdge,
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
                 mipmap_filter: wgpu::FilterMode::Nearest,
                 compare: None,
                 lod_min_clamp: 0.0,
@@ -61,6 +64,7 @@ impl Texture {
             })
         };
 
+        //println!("Created texture of dimension: ({}, {}), and it's a depth texture: {}", size.width, size.height, comparison);
 
         Texture {
             texture,
