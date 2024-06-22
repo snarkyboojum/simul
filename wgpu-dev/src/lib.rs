@@ -27,6 +27,18 @@ const INDICES: &[u16] = &[
     2, 3, 4,
 ];
 
+const DEPTH_VERTICES: &[Vertex] = &[
+    Vertex { position: [0.0, 0.0, 0.0], tex_coords: [0.0, 1.0], },
+    Vertex { position: [1.0, 0.0, 0.0], tex_coords: [1.0, 1.0], },
+    Vertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
+    Vertex { position: [0.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
+];
+
+const DEPTH_INDICES: &[u16] = &[
+    0, 1, 3,
+    1, 2, 3,
+];
+
 const NUM_INSTANCES_PER_ROW: u32 = 10;
 const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
 
@@ -293,6 +305,147 @@ impl CameraController {
 
 
 
+struct DepthScene {
+    pipeline: wgpu::RenderPipeline,
+    bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    depth_texture: texture::Texture,
+    layout: wgpu::BindGroupLayout,
+    num_indices: u32,
+}
+
+impl DepthScene {
+    fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+
+        let depth_texture = texture::Texture::create_depth_texture(device, config, "Non comparison depth texture", false);
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+            ],
+            label: Some("depth_texture_bind_group_layout"),
+        });
+
+        let bind_group = device.create_bind_group( &wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&depth_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&depth_texture.sampler),
+                },
+            ],
+            label: Some("depth_texture_bind_group"),
+        });
+
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Depth shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("depth_shader.wgsl").into()),
+        });
+
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label:  Some("Depth buffer render pipeline layout"),
+            bind_group_layouts: &[
+                &bind_group_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Depth buffer render pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::desc()],
+                compilation_options: Default::default(),
+
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            depth_stencil: None,
+            // depth_stencil: Some(wgpu::DepthStencilState {
+            //     format: texture::Texture::DEPTH_FORMAT,
+            //     depth_write_enabled: true,
+            //     depth_compare: wgpu::CompareFunction::Less,
+            //     stencil: wgpu::StencilState::default(),
+            //     bias: wgpu::DepthBiasState::default(),
+            // }),
+            multiview: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw, // Ccw is also the default with RH coordinates
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+                unclipped_depth: false,
+            },
+        });
+        
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Depth vertex buffer"),
+            contents: bytemuck::cast_slice(DEPTH_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Depth index buffer"),
+                contents: bytemuck::cast_slice(DEPTH_INDICES),
+                usage: wgpu::BufferUsages::INDEX,
+            }
+        );
+
+        let num_indices = DEPTH_INDICES.len();
+
+        Self {
+            pipeline,
+            bind_group,
+            depth_texture,
+            vertex_buffer,
+            index_buffer,
+            layout: bind_group_layout,
+            num_indices: num_indices as u32,
+        }
+    }
+}
+
+
+
 struct Simul<'app> {
     surface: wgpu::Surface<'app>,
     device: wgpu::Device,
@@ -303,7 +456,6 @@ struct Simul<'app> {
     flip: bool,     // flag to know if to switch render pipelines
     window: &'app Window,
 
-    render_pipeline: wgpu::RenderPipeline,
 
     num_indices: u32,
     vertex_buffer: wgpu::Buffer,
@@ -327,6 +479,9 @@ struct Simul<'app> {
     instance_buffer: wgpu::Buffer,
 
     depth_texture: texture::Texture,
+
+    render_pipeline: wgpu::RenderPipeline,
+    depth_scene: DepthScene,
 }
 
 impl<'app> Simul<'app> {
@@ -415,29 +570,6 @@ impl<'app> Simul<'app> {
             label: Some("texture_bind_group_layout"),
         });
 
-        // TODO: is TextureSampleType: depth correct here, if we want to render the depth texture?
-        let depth_texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Depth,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("depth_texture_bind_group_layout"),
-        });
-
         let tree_bind_group= device.create_bind_group( &wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
             entries: &[
@@ -517,7 +649,6 @@ impl<'app> Simul<'app> {
             ],
         });
 
-
         // create all the instances
         let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
@@ -549,22 +680,7 @@ impl<'app> Simul<'app> {
         );
 
         // create our depth texture
-        let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
-
-        // let depth_bind_group = device.create_bind_group( &wgpu::BindGroupDescriptor {
-        //     layout: &depth_texture_bind_group_layout,
-        //     entries: &[
-        //         wgpu::BindGroupEntry {
-        //             binding: 0,
-        //             resource: wgpu::BindingResource::TextureView(&depth_texture.view),
-        //         },
-        //         wgpu::BindGroupEntry {
-        //             binding: 1,
-        //             resource: wgpu::BindingResource::Sampler(&depth_texture.sampler),
-        //         },
-        //     ],
-        //     label: Some("Depth bind group"),
-        // });
+        let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture", true);
 
         // setup vertex and index buffers
         // println!("Number of vertices is: {}", VERTICES.len());
@@ -593,7 +709,6 @@ impl<'app> Simul<'app> {
             bind_group_layouts: &[
                 &texture_bind_group_layout,
                 &camera_bind_group_layout,
-                // &depth_texture_bind_group_layout,
             ],
             push_constant_ranges: &[],
         });
@@ -642,6 +757,9 @@ impl<'app> Simul<'app> {
             },
         });
 
+        // create what we need to render the depth buffer
+        let depth_scene = DepthScene::new(&device, &config);
+
         Self {
             surface,
             device,
@@ -652,8 +770,6 @@ impl<'app> Simul<'app> {
 
             window,
 
-            render_pipeline,
-            
             num_indices: num_indices as u32,
             vertex_buffer,
             index_buffer,
@@ -673,6 +789,9 @@ impl<'app> Simul<'app> {
             instance_buffer,
 
             depth_texture,
+
+            render_pipeline,
+            depth_scene,
         }
     }
 
@@ -682,7 +801,25 @@ impl<'app> Simul<'app> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
 
-            self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+            // resize the depth buffer texture 
+            self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture", true);
+            self.depth_scene.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture", false);
+
+            self.depth_scene.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.depth_scene.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&self.depth_scene.depth_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.depth_scene.depth_texture.sampler),
+                    },
+                ],
+                label: Some("depth_pass.bind_group"),
+            });
+
             self.surface.configure(&self.device, &self.config);
         }
     }
@@ -743,8 +880,12 @@ impl<'app> Simul<'app> {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
+                    view: &self.depth_scene.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
+                        // this means the depth texture is cleared to a depth value of 1.0 (far plane)
+                        // at the beginning of the render pass. When each fragment is rendered, its depth
+                        // value is compared to the existing value in the depth texture, and the texture is 
+                        // udpated accordingly.
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
@@ -764,12 +905,43 @@ impl<'app> Simul<'app> {
                 render_pass.set_bind_group(0, &self.glenda_bind_group, &[]);
             }
 
+            // println!("Rendering normal scene");
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
             render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
+
+        }
+
+        // create another render pass to render the depth buffer
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Depth Visual Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            // TODO: try and draw the depth buffer/texture
+            // println!("Rendering depth buffer scene");
+            render_pass.set_pipeline(&self.depth_scene.pipeline);
+            render_pass.set_bind_group(0, &self.depth_scene.bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.depth_scene.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.depth_scene.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+
+            // TODO: can we just draw here using the same render_pass with new bind group and vertex/index buffers?
+            render_pass.draw_indexed(0..self.depth_scene.num_indices, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
