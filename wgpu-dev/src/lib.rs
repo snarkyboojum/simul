@@ -39,7 +39,6 @@ const DEPTH_INDICES: &[u16] = &[
     1, 2, 3,
 ];
 
-
 const NUM_INSTANCES_PER_ROW: u32 = 10;
 const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
 
@@ -311,7 +310,8 @@ struct DepthScene {
     bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    depth_texture: Texture,
+    depth_texture: texture::Texture,
+    layout: wgpu::BindGroupLayout,
     num_indices: u32,
 }
 
@@ -438,6 +438,7 @@ impl DepthScene {
             depth_texture,
             vertex_buffer,
             index_buffer,
+            layout: bind_group_layout,
             num_indices: num_indices as u32,
         }
     }
@@ -800,12 +801,26 @@ impl<'app> Simul<'app> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
 
-            // println!("Updating depth textures on resize");
-
+            // resize the depth buffer texture 
             self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture", true);
-            self.surface.configure(&self.device, &self.config);
+            self.depth_scene.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture", false);
 
-            self.depth_scene.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth texture for rendering", false);
+            self.depth_scene.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.depth_scene.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&self.depth_scene.depth_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.depth_scene.depth_texture.sampler),
+                    },
+                ],
+                label: Some("depth_pass.bind_group"),
+            });
+
+            self.surface.configure(&self.device, &self.config);
         }
     }
 
@@ -867,6 +882,10 @@ impl<'app> Simul<'app> {
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_scene.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
+                        // this means the depth texture is cleared to a depth value of 1.0 (far plane)
+                        // at the beginning of the render pass. When each fragment is rendered, its depth
+                        // value is compared to the existing value in the depth texture, and the texture is 
+                        // udpated accordingly.
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),

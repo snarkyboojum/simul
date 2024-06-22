@@ -1,8 +1,9 @@
 //
 // Depth shader
+//
 // 
-
 // Vertex shader
+// 
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -36,18 +37,9 @@ var s_depth: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-
     let near = 0.1;
     let far = 100.0;
     let depth = textureSample(t_depth, s_depth, in.tex_coords).x;
     let r = (2.0 * near) / (far + near - depth * (far - near));
-    return vec4<f32>(vec3<f32>(depth), 1.0);
-    // return vec4<f32>(vec3<f32>(1), 1.0);
-
-    // TODO: I don't know what offset does or why it's required for a texture_depth_2d type
-    //       See, https://www.w3.org/TR/WGSL/#texturesample
-    // let value = textureSample(t_depth, s_depth, in.tex_coords, vec2<i32>(0,0));
-    // let frag = vec4<f32>(value, value, value, 1);
-
-    // return frag;
+    return vec4<f32>(vec3<f32>(r), 1.0);
 }

@@ -73,7 +73,6 @@ impl Texture {
         }
     }
 
-
     pub fn from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
