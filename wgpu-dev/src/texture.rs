@@ -13,7 +13,7 @@ impl Texture {
     pub fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, label: &str, comparison: bool) -> Self {
 
         assert_ne!(config.width, 0);
-        assert_ne!(config.width, 0);
+        assert_ne!(config.height, 0);
 
         let size = wgpu::Extent3d {
             width: config.width,

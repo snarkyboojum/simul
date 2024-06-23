@@ -1,4 +1,9 @@
 mod texture;
+mod model;
+mod resources;
+
+use model::{ModelVertex, Vertex};
+
 
 use cgmath::{InnerSpace, Rotation3};
 use texture::Texture;
@@ -11,50 +16,21 @@ use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 
 
-
-// we use the convention that vertices are counter-clockwise (CCW) - see below in the render pipeline configuration
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.0868241, 0.49240386, 0.0], tex_coords: [0.4131759, 0.00759614], }, // A
-    Vertex { position: [-0.49513406, 0.06958647, 0.0], tex_coords: [0.0048659444, 0.43041354], }, // B
-    Vertex { position: [-0.21918549, -0.44939706, 0.0], tex_coords: [0.28081453, 0.949397], }, // C
-    Vertex { position: [0.35966998, -0.3473291, 0.0], tex_coords: [0.85967, 0.84732914], }, // D
-    Vertex { position: [0.44147372, 0.2347359, 0.0], tex_coords: [0.9414737, 0.2652641], }, // E
-];
-
-const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-];
-
-const DEPTH_VERTICES: &[Vertex] = &[
-    Vertex { position: [0.0, 0.0, 0.0], tex_coords: [0.0, 1.0], },
-    Vertex { position: [1.0, 0.0, 0.0], tex_coords: [1.0, 1.0], },
-    Vertex { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
-    Vertex { position: [0.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
-];
-
-const DEPTH_INDICES: &[u16] = &[
-    0, 1, 3,
-    1, 2, 3,
-];
-
-const NUM_INSTANCES_PER_ROW: u32 = 10;
-const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
-
-
+// TODO: We are keeping Vertex2D around for the depth buffer rendering
+//       Eventually this should be made consistent with the Vertex implementation
+//       used to render .obj models?:   
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct Vertex {
+struct Vertex2D {
     position: [f32; 3],
     tex_coords: [f32; 2],
 
 }
 
-impl Vertex {
+impl Vertex2D {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<Vertex2D>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -71,6 +47,22 @@ impl Vertex {
         }
     }
 }
+
+
+const DEPTH_VERTICES: &[Vertex2D] = &[
+    Vertex2D { position: [0.0, 0.0, 0.0], tex_coords: [0.0, 1.0], },
+    Vertex2D { position: [1.0, 0.0, 0.0], tex_coords: [1.0, 1.0], },
+    Vertex2D { position: [1.0, 1.0, 0.0], tex_coords: [1.0, 0.0], },
+    Vertex2D { position: [0.0, 1.0, 0.0], tex_coords: [0.0, 0.0], },
+];
+
+const DEPTH_INDICES: &[u16] = &[
+    0, 1, 3,
+    1, 2, 3,
+];
+
+const NUM_INSTANCES_PER_ROW: u32 = 10;
+const SPACE_BETWEEN: f32 = 3.0;
 
 
 struct Instance {
@@ -360,7 +352,7 @@ impl DepthScene {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Depth shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("depth_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("wgsl/depth_shader.wgsl").into()),
         });
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -377,7 +369,7 @@ impl DepthScene {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
+                buffers: &[Vertex2D::desc()],
                 compilation_options: Default::default(),
 
             },
@@ -456,11 +448,6 @@ struct Simul<'app> {
     flip: bool,     // flag to know if to switch render pipelines
     window: &'app Window,
 
-
-    num_indices: u32,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-
     tree_bind_group: wgpu::BindGroup,
     glenda_bind_group: wgpu::BindGroup,
     
@@ -482,12 +469,14 @@ struct Simul<'app> {
 
     render_pipeline: wgpu::RenderPipeline,
     depth_scene: DepthScene,
+
+    obj_model: model::Model,
 }
 
 impl<'app> Simul<'app> {
     async fn new(window: &'app Window) -> Simul<'app> {
         let size = window.inner_size();
-        let num_indices= INDICES.len();
+        // let num_indices= INDICES.len();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -538,13 +527,9 @@ impl<'app> Simul<'app> {
         };
 
 
-        // load a texture from an image file
-        let tree_bytes = include_bytes!("happy-tree.png");
-        let tree_texture = Texture::from_bytes(&device, &queue, tree_bytes, "happy-tree.png").unwrap();
-
-        // load another texture
-        let glenda_bytes = include_bytes!("spaceglenda37.jpg");
-        let glenda_texture = Texture::from_bytes(&device, &queue, glenda_bytes, "spaceglenda37.jpg").unwrap();
+        // load textures from image files
+        let tree_texture = resources::load_texture("happy-tree.png", &device, &queue).await.unwrap();
+        let glenda_texture = resources::load_texture("spaceglenda37.jpg", &device, &queue).await.unwrap();
 
 
         // setup the bind group layout for textures
@@ -649,24 +634,26 @@ impl<'app> Simul<'app> {
             ],
         });
 
-        // create all the instances
+
         let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let position = cgmath::Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+                let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+                let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+
+                let position = cgmath::Vector3 { x, y: 0.0, z };
 
                 let rotation = if position.is_zero() {
                     cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
-                }
-                else {
+                } else {
                     cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
                 };
 
                 Instance {
-                    position,
-                    rotation
+                    position, rotation,
                 }
             })
         }).collect::<Vec<_>>();
+
 
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
         // println!("Number of instances is: {}", instance_data.len());
@@ -679,29 +666,18 @@ impl<'app> Simul<'app> {
             }
         );
 
+
+        let obj_model =
+            resources::load_model("cube.obj", &device, &queue, &texture_bind_group_layout)
+                .await
+                .unwrap();
+
         // create our depth texture
         let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture", true);
 
-        // setup vertex and index buffers
-        // println!("Number of vertices is: {}", VERTICES.len());
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
-            }
-        );
-        
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Standard shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("wgsl/shader.wgsl").into()),
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -719,7 +695,7 @@ impl<'app> Simul<'app> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), InstanceRaw::desc()],
+                buffers: &[ModelVertex::desc(), InstanceRaw::desc()],
                 compilation_options: Default::default(),
 
             },
@@ -770,10 +746,6 @@ impl<'app> Simul<'app> {
 
             window,
 
-            num_indices: num_indices as u32,
-            vertex_buffer,
-            index_buffer,
-
             tree_texture,
             glenda_texture,
             tree_bind_group,
@@ -792,6 +764,8 @@ impl<'app> Simul<'app> {
 
             render_pipeline,
             depth_scene,
+
+            obj_model,
         }
     }
 
@@ -907,11 +881,15 @@ impl<'app> Simul<'app> {
 
             // println!("Rendering normal scene");
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
+            use model::DrawModel;
+            render_pass.draw_mesh_instanced(&self.obj_model.meshes[0], 0..self.instances.len() as u32);
+
+            // render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            // render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            // render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
 
         }
 
