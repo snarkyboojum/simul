@@ -445,7 +445,8 @@ struct Simul<'app> {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
 
-    flip: bool,     // flag to know if to switch render pipelines
+    flip_texture: bool,
+    show_depth: bool,
     window: &'app Window,
 
     tree_bind_group: wgpu::BindGroup,
@@ -742,7 +743,8 @@ impl<'app> Simul<'app> {
             queue,
             config,
             size,
-            flip: false,
+            flip_texture: false,
+            show_depth: false,
 
             window,
 
@@ -805,13 +807,25 @@ impl<'app> Simul<'app> {
         match event {
             WindowEvent::KeyboardInput {
                 event: KeyEvent {
-                    physical_key: PhysicalKey::Code(KeyCode::Space),
+                    physical_key: PhysicalKey::Code(KeyCode::KeyT),
                     state: ElementState::Pressed,
                     ..
                 },
                 ..
              } => {
-                self.flip = if self.flip { false } else { true };
+                self.flip_texture = if self.flip_texture { false } else { true };
+
+                return true
+            },
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    physical_key: PhysicalKey::Code(KeyCode::Slash),
+                    state: ElementState::Pressed,
+                    ..
+                },
+                ..
+             } => {
+                self.show_depth = if self.show_depth { false } else { true };
 
                 return true
             },
@@ -872,7 +886,7 @@ impl<'app> Simul<'app> {
 
             render_pass.set_pipeline(&self.render_pipeline);
 
-            if self.flip {
+            if self.flip_texture {
                 render_pass.set_bind_group(0, &self.tree_bind_group, &[]);
             }
             else {
@@ -894,7 +908,7 @@ impl<'app> Simul<'app> {
         }
 
         // create another render pass to render the depth buffer
-        {
+        if self.show_depth {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Depth Visual Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
