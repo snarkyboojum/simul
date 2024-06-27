@@ -883,9 +883,6 @@ impl<'app> Simul<'app> {
                 timestamp_writes: None,
             });
 
-
-            render_pass.set_pipeline(&self.render_pipeline);
-
             if self.flip_texture {
                 render_pass.set_bind_group(0, &self.tree_bind_group, &[]);
             }
@@ -894,19 +891,15 @@ impl<'app> Simul<'app> {
             }
 
             // println!("Rendering normal scene");
-            // render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            render_pass.set_pipeline(&self.render_pipeline);
 
             use model::DrawModel;
             let mesh = &self.obj_model.meshes[0];
             let material = &self.obj_model.materials[mesh.material];
-            render_pass.draw_mesh_instanced(mesh, material, 0..self.instances.len() as u32, &self.camera_bind_group);
 
-            // render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            // render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
-            // render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
-
+            render_pass.draw_model_instanced(&self.obj_model, 0..self.instances.len() as u32, &self.camera_bind_group)
+            // render_pass.draw_mesh_instanced(mesh, material, 0..self.instances.len() as u32, &self.camera_bind_group);
         }
 
         // create another render pass to render the depth buffer
