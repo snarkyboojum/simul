@@ -49,7 +49,6 @@ pub async fn load_binary(file_name: &str) -> anyhow::Result<Vec<u8>> {
             let path = std::path::Path::new(env!("OUT_DIR"))
                 .join("assets")
                 .join(file_name);
-            println!("path in load_binary is: {:?}", path);
             let data = std::fs::read(path)?;
         }
     }
@@ -62,8 +61,6 @@ pub async fn load_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> anyhow::Result<texture::Texture> {
-    println!("file_name in load_texture is: {file_name}");
-    println!("OUT_DIR is: {}", env!("OUT_DIR"));
 
     let data = load_binary(file_name).await?;
     texture::Texture::from_bytes(device, queue, &data, file_name)

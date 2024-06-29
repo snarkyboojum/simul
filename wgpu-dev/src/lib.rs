@@ -296,6 +296,15 @@ impl CameraController {
 }
 
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct LightUniform {
+    position: [f32; 3],
+    _padding: u32,
+    color: [f32; 3],
+    _padding2: u32,
+}
+
 
 struct DepthScene {
     pipeline: wgpu::RenderPipeline,
@@ -449,19 +458,23 @@ struct Simul<'app> {
     show_depth: bool,
     window: &'app Window,
 
-    tree_bind_group: wgpu::BindGroup,
-    glenda_bind_group: wgpu::BindGroup,
-    
     // we should store a list of textures here or a hashmap
     tree_texture: texture::Texture,
     glenda_texture: texture::Texture,
 
+    tree_bind_group: wgpu::BindGroup,
+    glenda_bind_group: wgpu::BindGroup,
+    
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    
     camera_controller: CameraController,
-
     camera_staging: CameraStaging,
+
+    light_uniform: LightUniform,
+    light_buffer: wgpu::Buffer,
+    light_bind_group: wgpu::BindGroup,
 
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
@@ -617,7 +630,11 @@ impl<'app> Simul<'app> {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 }
             ],
@@ -635,6 +652,46 @@ impl<'app> Simul<'app> {
             ],
         });
 
+        let light_uniform = LightUniform {
+            position: [2.0, 2.0, 2.0],
+            _padding: 0,
+            color: [1.0, 1.0, 1.0],
+            _padding2: 0,
+        };
+
+        let light_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Light buffer"),
+                contents: bytemuck::cast_slice(&[light_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("light_bind_group_layout"),
+        });
+
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &light_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: light_buffer.as_entire_binding(),
+
+            }],
+            label: Some("light_bind_group"),
+        });
 
         let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
@@ -686,6 +743,7 @@ impl<'app> Simul<'app> {
             bind_group_layouts: &[
                 &texture_bind_group_layout,
                 &camera_bind_group_layout,
+                // &light_bind_group_layout,
             ],
             push_constant_ranges: &[],
         });
@@ -759,6 +817,11 @@ impl<'app> Simul<'app> {
             camera_controller,
 
             camera_staging,
+
+            light_uniform,
+            light_buffer,
+            light_bind_group,
+
             instances,
             instance_buffer,
 
@@ -839,6 +902,15 @@ impl<'app> Simul<'app> {
         self.camera_staging.update_camera(&mut self.camera_uniform);
 
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
+
+
+        // update the light - to rotate around the origin one degree every frame
+        let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
+        self.light_uniform.position = 
+            (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0))
+                * old_position)
+                .into();
+        self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light_uniform]));
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
