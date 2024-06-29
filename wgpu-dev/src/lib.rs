@@ -1,3 +1,7 @@
+
+// Largely sourced from Learn Wgpu tutorial - https://sotrh.github.io/learn-wgpu/beginner/tutorial2-surface/#render
+//
+
 mod texture;
 mod model;
 mod resources;
@@ -6,9 +10,8 @@ use model::{ModelVertex, Vertex};
 
 
 use cgmath::{InnerSpace, Rotation3};
-use texture::Texture;
 use winit::{
-    dpi::LogicalSize, event::{self, ElementState, Event, KeyEvent, WindowEvent}, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
+    dpi::LogicalSize, event::{ElementState, Event, KeyEvent, WindowEvent}, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
 };
 
 use cgmath::prelude::*;
@@ -458,10 +461,6 @@ struct Simul<'app> {
     show_depth: bool,
     window: &'app Window,
 
-    // we should store a list of textures here or a hashmap
-    tree_texture: texture::Texture,
-    glenda_texture: texture::Texture,
-
     tree_bind_group: wgpu::BindGroup,
     glenda_bind_group: wgpu::BindGroup,
     
@@ -806,8 +805,6 @@ impl<'app> Simul<'app> {
 
             window,
 
-            tree_texture,
-            glenda_texture,
             tree_bind_group,
             glenda_bind_group,
 
@@ -916,7 +913,6 @@ impl<'app> Simul<'app> {
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
 
-        // copy pasta from the tutorial - https://sotrh.github.io/learn-wgpu/beginner/tutorial2-surface/#render
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
@@ -962,16 +958,11 @@ impl<'app> Simul<'app> {
                 render_pass.set_bind_group(0, &self.glenda_bind_group, &[]);
             }
 
-            // println!("Rendering normal scene");
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_pipeline(&self.render_pipeline);
 
             use model::DrawModel;
-            let mesh = &self.obj_model.meshes[0];
-            let material = &self.obj_model.materials[mesh.material];
-
             render_pass.draw_model_instanced(&self.obj_model, 0..self.instances.len() as u32, &self.camera_bind_group)
-            // render_pass.draw_mesh_instanced(mesh, material, 0..self.instances.len() as u32, &self.camera_bind_group);
         }
 
         // create another render pass to render the depth buffer

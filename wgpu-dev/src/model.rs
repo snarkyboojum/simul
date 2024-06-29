@@ -1,7 +1,7 @@
 
 use crate::texture;
 
-use std::{cmp, mem};
+use std::mem;
 use std::ops::Range;
 
 
